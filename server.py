@@ -49,18 +49,29 @@ FAILURE_RX = re.compile(
     r"FAILED|error TS\d+|SyntaxError|ModuleNotFoundError|ENOENT|EACCES|"
     r"fatal:|npm ERR!|Build failed|тесты? упал)", re.IGNORECASE)
 SECRET_RX = re.compile(
-    r"(?i)((?:api[_-]?key|token|password|passwd|secret|bearer|authorization)"
+    r"(?i)((?:api[_-]?key|token|password|passwd|secret|access[_-]?key)"
     r"['\"]?\s*[:=]\s*['\"]?)([^\s'\",;]{8,})|"
+    r"((?:bearer|authorization)['\"]?\s*[:=]?\s+)([^\s'\",;]{12,})|"
     r"\b(glpat-[\w-]{15,}|sk-[\w-]{20,}|hf_[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|"
-    r"xox[bp]-[\w-]{20,}|AKIA[A-Z0-9]{16})\b")
+    r"gho_[A-Za-z0-9]{20,}|npm_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,}|"
+    r"xox[bp]-[\w-]{20,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\."
+    r"[A-Za-z0-9_-]{10,})\b|"
+    r"([a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s/@]+@)|"  # user:pass@ в URL
+    r"(-----BEGIN [A-Z ]*PRIVATE KEY-----)")
 INJECTION_RX = re.compile(
-    r"(?i)(?:ignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions|"
-    r"disregard\s+(?:your|the|all)[\w\s]*(?:instructions|rules)|"
-    r"you\s+are\s+now\s+(?:a|an|in)\b|new\s+system\s+prompt|<\s*system\s*>|"
-    r"do\s+not\s+(?:tell|inform|mention\s+to)\s+the\s+user|"
-    r"(?:игнорируй|забудь)\s+(?:все\s+)?(?:предыдущие|прошлые)\s+(?:инструкции|правила)|"
-    r"не\s+говори\s+(?:об\s+этом\s+)?(?:юзеру|пользователю)|"
-    r"BEGIN\s+SYSTEM|\boverride\s+(?:safety|security|all)\b)")
+    r"(?i)(?:(?:ignore|disregard|forget)\s+(?:all\s+|everything\s+)?"
+    r"(?:previous|prior|above|the\s+above|your)\s*[\w\s]*"
+    r"(?:instructions?|rules?|prompts?)?|"
+    r"(?:from\s+now\s+on|starting\s+now)[\w\s,]*(?:you\s+(?:are|will|must)|"
+    r"your\s+new)|you\s+are\s+now\s+(?:a|an|in)\b|new\s+(?:system\s+)?"
+    r"(?:prompt|instructions?|rules?)|<\s*system\s*>|BEGIN\s+SYSTEM|"
+    r"(?:do\s+not|don't|never)\s+(?:tell|inform|mention|reveal|disclose)"
+    r"[\w\s]*(?:the\s+)?(?:user|this)|"
+    r"(?:игнорир|забудь|отмени|проигнорир)[а-я]*\s+(?:все\s+)?"
+    r"(?:предыдущ|прошл|вышеуказан|эти)[а-я]*\s*(?:инструкц|правил|указан)?|"
+    r"отныне[\w\s,а-я]*(?:ты|вы)\s+(?:работа|действу|будешь)|"
+    r"(?:не\s+)?(?:говори|сообщай|рассказыв)[а-я]*\s+(?:об\s+этом\s+)?"
+    r"(?:юзеру|пользовател)|\boverride\s+(?:safety|security|all)\b)")
 # Ключ урока = нормализованная «сущность» сигнала: путь файла / имя команды / первые слова
 KEY_STOP = re.compile(r"[^a-z0-9а-яё_./-]+", re.IGNORECASE)
 
@@ -109,13 +120,21 @@ def db() -> sqlite3.Connection:
 
 def redact(text: str) -> str:
     def sub(m: re.Match) -> str:
-        if m.group(1):
-            return m.group(1) + "[REDACTED]"
+        # группы 1 и 3 — префиксы key=/bearer, оставляем их, режем значение
+        for g in (1, 3):
+            if m.group(g):
+                return m.group(g) + "[REDACTED]"
         return "[REDACTED]"
     return SECRET_RX.sub(sub, text)
 
 
+def defang(text: str) -> str:
+    """Обезвредить injection-маркеры в тексте, который вернётся модели как данные."""
+    return INJECTION_RX.sub("[injection-marker removed]", text)
+
+
 def lesson_key(kind: str, material: str) -> str:
+    material = redact(material)  # секрет не должен попасть в первичный ключ
     material = KEY_STOP.sub("-", material.strip().lower())[:80].strip("-")
     return f"{kind}:{material}" if material else ""
 
@@ -186,10 +205,21 @@ def parse_new_lines(conn: sqlite3.Connection, path: Path) -> tuple[list, dict]:
     return signals, stats
 
 
+def skill_bases(pinned: str | None = None) -> list[Path]:
+    """Все места, где живут скиллы — для поиска дублей и ретайра."""
+    bases = [USER_SKILLS, STAGING]
+    if pinned:
+        bases.insert(0, Path(pinned) / ".claude" / "skills")
+    for extra in (Path("D:/Projects/claude-skills"),):  # локальная библиотека юзера
+        if extra.is_dir():
+            bases.append(extra)
+    return [b for b in dict.fromkeys(bases)]
+
+
 def similar_skills(query: str, limit: int = 3) -> list[dict]:
-    """Ищет похожие скиллы по имени/описанию в staging + пользовательских скиллах."""
+    """Ищет похожие скиллы по имени/описанию во всех местах, где они живут."""
     out, q = [], set(re.findall(r"[a-zа-яё0-9]{4,}", query.lower()))
-    for base in (STAGING, USER_SKILLS):
+    for base in skill_bases():
         if not base.is_dir():
             continue
         for sk in base.glob("*/SKILL.md"):
@@ -199,6 +229,25 @@ def similar_skills(query: str, limit: int = 3) -> list[dict]:
                 out.append({"name": sk.parent.name, "path": str(sk), "score": score,
                             "staged": base == STAGING})
     return sorted(out, key=lambda x: -x["score"])[:limit]
+
+
+def _archive_skill(name: str, pinned: str | None, tag: str) -> list[str]:
+    """Перенести живой скилл + staging-копию в архив лупа (обратимо). Возвращает что убрал."""
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    (ROOT / "archive").mkdir(exist_ok=True)
+    moved = []
+    seen: set[str] = set()
+    for base in ([Path(pinned) / ".claude" / "skills"] if pinned else []) + [USER_SKILLS, STAGING]:
+        d = base / name
+        if str(d) in seen or not d.is_dir():
+            continue
+        seen.add(str(d))
+        dst = ROOT / "archive" / f"{name}-{tag}-{ts}"
+        while dst.exists():
+            dst = ROOT / "archive" / f"{name}-{tag}-{ts}-{len(moved)}"
+        shutil.move(str(d), str(dst))
+        moved.append(str(d))
+    return moved
 
 
 @mcp.tool()
@@ -212,6 +261,12 @@ def reflect(transcript_path: str = "") -> dict:
         path = find_transcript(transcript_path)
         if not path:
             return {"error": "no fresh transcript found; pass transcript_path explicitly"}
+        # эксклюзивная транзакция: параллельный reflect (in-session + SessionEnd-хук)
+        # не прочитает тот же offset и не задвоит seen_count
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError:
+            return {"error": "satori busy (another reflect running) — retry in a moment"}
         signals, stats = parse_new_lines(conn, path)
         now = time.time()
         for kind, excerpt in signals:
@@ -235,19 +290,19 @@ def reflect(transcript_path: str = "") -> dict:
                 conn.execute("""INSERT INTO skill_usage(name,use_count,last_used)
                     VALUES(?,1,?) ON CONFLICT(name) DO UPDATE SET
                     use_count=use_count+1, last_used=?""", (name, now, now))
-        # Куратор: stale в 30д, архив в 90д; проверенные (use_count>=3) стареют вдвое медленнее
+        # Куратор: stale в 30д, архив в 90д; проверенные (use_count>=3) стареют вдвое медленнее.
+        # Ретайрит ЖИВОЙ скилл (не только staging-копию) — иначе автоактивированные не стареют.
         stale, archived = [], []
-        for nm, uc, lu, sts in conn.execute(
-                """SELECT name,use_count,last_used,staged_ts FROM skill_usage
+        for nm, uc, lu, sts, pin in conn.execute(
+                """SELECT name,use_count,last_used,staged_ts,pinned_project FROM skill_usage
                    WHERE staged_ts IS NOT NULL"""):
-            src = STAGING / nm
-            if not (src / "SKILL.md").is_file():
+            live = any((b / nm / "SKILL.md").is_file() for b in skill_bases(pin))
+            if not live:
                 continue
             mult = 2 if (uc or 0) >= 3 else 1
             idle_d = (now - max(lu or 0, sts or 0)) / 86400
             if idle_d > ARCHIVE_DAYS * mult:
-                (ROOT / "archive").mkdir(exist_ok=True)
-                shutil.move(str(src), str(ROOT / "archive" / f"{nm}-{time.strftime('%Y%m%d')}"))
+                _archive_skill(nm, pin, "stale")
                 conn.execute("UPDATE skill_usage SET staged_ts=NULL WHERE name=?", (nm,))
                 archived.append(nm)
             elif idle_d > STALE_DAYS * mult:
@@ -259,8 +314,9 @@ def reflect(transcript_path: str = "") -> dict:
                      OR (kind='correction' AND seen_count>=?))
                    ORDER BY (kind='correction') DESC, last_ts DESC LIMIT 8""",
                 (PROMOTE_AT, CORRECTION_PROMOTE_AT)):
+            # excerpt возвращается модели как ДАННЫЕ — обезвредить injection-маркеры
             candidates.append({"key": key, "kind": kind, "seen_count": cnt,
-                               "excerpt": excerpt,
+                               "excerpt": defang(excerpt),
                                "similar_skills": similar_skills(excerpt)})
         conn.commit()
         return {
@@ -313,6 +369,10 @@ def submit_draft(name: str, markdown: str, lesson_key: str = "", patches: str = 
         return {"error": "description must start with 'Use when ...' — it is the recall "
                          "trigger; state WHEN to recall this (not what it does) and be "
                          "pushy: list concrete phrases/situations, skills undertrigger"}
+    fm_name = re.search(r"^name:\s*[\"']?([^\"'\n]+)", fm, re.MULTILINE)
+    if not fm_name or fm_name.group(1).strip() != name:
+        return {"error": f"frontmatter name: must equal the name arg '{name}' — "
+                         "Claude Code resolves skills by frontmatter, a mismatch = silent no-trigger"}
     if SECRET_RX.search(markdown):
         return {"error": "draft contains something that looks like a secret — redact it"}
     if INJECTION_RX.search(markdown):
@@ -346,6 +406,12 @@ def submit_draft(name: str, markdown: str, lesson_key: str = "", patches: str = 
     # Полный автомат: активируем сразу (обратимо через retire_skill)
     base = Path(pinned_project) / ".claude" / "skills" if pinned_project else USER_SKILLS
     live = base / name / "SKILL.md"
+    # Provenance-guard: не перезаписывать чужой рукописный скилл (без satori-штампа) авто-магией
+    if live.exists() and "<!-- satori:" not in live.read_text(encoding="utf-8", errors="replace"):
+        return {"staged": str(dest), "pinned_project": pinned_project or "global",
+                "note": (f"A hand-written skill '{name}' already exists and was NOT overwritten. "
+                         "Draft kept in staging — approve_draft to override deliberately, or "
+                         "rename the draft.")}
     live.parent.mkdir(parents=True, exist_ok=True)
     if live.exists():
         shutil.copy2(live, BACKUPS / f"{name}.pre-activate.{int(time.time())}.md")
@@ -374,6 +440,8 @@ def approve_draft(name: str, dest_dir: str = "") -> dict:
                            (name,)).fetchone()
     conn0.close()
     if dest_dir:
+        if not Path(dest_dir).is_dir():
+            return {"error": f"dest_dir is not an existing directory: {dest_dir}"}
         base = Path(dest_dir)
     elif pinned and pinned[0]:
         base = Path(pinned[0]) / ".claude" / "skills"
@@ -400,46 +468,41 @@ def retire_skill(name: str) -> dict:
     """Instant undo for an auto-activated skill: moves the live skill dir and its
     staging copy into satori's archive (recoverable), restores a pre-activation
     backup if one existed."""
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    moved = []
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,60}", name):
+        return {"error": "invalid skill name"}
     conn = db()
     try:
         row = conn.execute("SELECT pinned_project FROM skill_usage WHERE name=?",
                            (name,)).fetchone()
     finally:
         conn.close()
-    bases = [USER_SKILLS]
-    if row and row[0]:
-        bases.insert(0, Path(row[0]) / ".claude" / "skills")
-    (ROOT / "archive").mkdir(exist_ok=True)
-    for base in bases:
-        live = base / name
-        if live.is_dir():
-            shutil.move(str(live), str(ROOT / "archive" / f"{name}-retired-{ts}"))
-            moved.append(str(live))
-            backups = sorted(BACKUPS.glob(f"{name}.pre-activate.*.md"))
-            if backups:  # вернуть то, что стояло до активации
-                dest = base / name / "SKILL.md"
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(backups[-1], dest)
-                moved.append(f"restored previous version from {backups[-1].name}")
-            break
-    stag = STAGING / name
-    if stag.is_dir():
-        shutil.move(str(stag), str(ROOT / "archive" / f"{name}-staging-{ts}"))
-        moved.append(str(stag))
+    pinned = row[0] if row and row[0] else None
+    # убрать ЖИВОЙ скилл (все базы) + staging-копию в архив
+    moved = _archive_skill(name, pinned, "retired")
+    # восстановить чужой рукописный скилл, если satori перезаписал его при активации
+    restored = None
+    backups = sorted(BACKUPS.glob(f"{name}.pre-activate.*.md"))
+    if backups and "<!-- satori:" not in backups[-1].read_text(encoding="utf-8", errors="replace"):
+        base = (Path(pinned) / ".claude" / "skills") if pinned else USER_SKILLS
+        d = base / name / "SKILL.md"
+        d.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(backups[-1], d)
+        restored = str(d)
     conn = db()
     try:
         conn.execute("UPDATE skill_usage SET staged_ts=NULL WHERE name=?", (name,))
+        # точный матч связки урок↔скилл (LIKE '%name%' задевал чужие уроки)
         conn.execute("UPDATE lessons SET status='skipped', note='retired by user' "
-                     "WHERE status IN ('staged','promoted') AND key LIKE ?", (f"%{name}%",))
+                     "WHERE status IN ('staged','promoted') AND key IN "
+                     "(SELECT key FROM lessons WHERE excerpt LIKE ?)", (f"%{name}%",))
         conn.commit()
     finally:
         conn.close()
     if not moved:
         return {"error": f"nothing found to retire for '{name}'"}
-    return {"retired": moved, "archive": str(ROOT / "archive"),
-            "note": "Recoverable from archive; the lesson is marked skipped and won't resurface."}
+    return {"retired": moved, "restored_handwritten": restored,
+            "archive": str(ROOT / "archive"),
+            "note": "Recoverable from archive; lesson marked skipped, won't resurface."}
 
 
 @mcp.tool()
@@ -469,17 +532,31 @@ def session_search(query: str, limit: int = 8) -> dict:
                     c = (rec.get("message") or {}).get("content")
                     if isinstance(c, str) and len(c) > 40:
                         chunk.append(c[:1500])
+                    elif isinstance(c, list):  # ответы ассистента: текст + результаты тулзов
+                        for b in c:
+                            if not isinstance(b, dict):
+                                continue
+                            t = b.get("text") if b.get("type") == "text" else None
+                            if b.get("type") == "tool_result":
+                                t = json.dumps(b.get("content", ""))[:1500]
+                            if t and len(t) > 40:
+                                chunk.append(t[:1500])
                 if chunk:
                     conn.execute("INSERT INTO transcripts(content,session,ts) VALUES(?,?,?)",
                                  (redact("\n".join(chunk))[:200000], f.stem, ts))
                     indexed += 1
             conn.execute("INSERT OR REPLACE INTO indexed_files VALUES(?,?)", (str(f), size))
         conn.commit()
-        safe_q = " ".join(re.findall(r"[\w./-]{2,}", query))
-        rows = conn.execute(
-            """SELECT session, ts, snippet(transcripts, 0, '>>', '<<', ' … ', 24)
-               FROM transcripts WHERE transcripts MATCH ? ORDER BY rank LIMIT ?""",
-            (safe_q or query, limit)).fetchall()
+        # каждый токен в кавычки — FTS5 трактует его как литерал, иначе . / - = синтаксис/операторы
+        toks = re.findall(r"[\w./-]{2,}", query)
+        safe_q = " ".join('"' + t.replace('"', '') + '"' for t in toks) or '"' + query.replace('"', '') + '"'
+        try:
+            rows = conn.execute(
+                """SELECT session, ts, snippet(transcripts, 0, '>>', '<<', ' … ', 24)
+                   FROM transcripts WHERE transcripts MATCH ? ORDER BY rank LIMIT ?""",
+                (safe_q, limit)).fetchall()
+        except sqlite3.OperationalError as e:
+            return {"indexed_now": indexed, "error": f"FTS query failed: {e}", "hits": []}
         return {"indexed_now": indexed,
                 "hits": [{"session": s, "date": time.strftime("%Y-%m-%d", time.localtime(t)),
                           "snippet": sn} for s, t, sn in rows]}

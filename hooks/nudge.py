@@ -104,7 +104,12 @@ def main() -> None:
 
     st = state_load()
     now = time.time()
-    calls = pending_calls(tp, reflect_offset(tp))
+    roff = reflect_offset(tp)
+    calls = pending_calls(tp, roff)
+    # reflect произошёл (offset уехал вперёд) → сбросить базу наджа, иначе порог растёт вечно
+    if roff > st.get("last_reflect_offset", 0):
+        st["nudged_at_calls"] = 0
+        st["last_reflect_offset"] = roff
 
     # Мгновенный nudge на коррекцию (порог 1, с дедупом серии)
     if event == "prompt-submit":
