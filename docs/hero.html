@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { width:1280px; height:640px; background:#0b0f17; color:#e6edf3;
+         font-family:'Segoe UI',system-ui,sans-serif; padding:48px 56px; overflow:hidden; }
+  .title { font-size:52px; font-weight:800; letter-spacing:-1px; }
+  .title .accent { color:#4f8ff7; }
+  .tag { color:#8b98a9; font-size:21px; margin-top:10px; }
+  .loop { display:flex; align-items:center; gap:14px; margin:42px 0 36px; }
+  .stage { background:#111826; border:1px solid #223047; border-radius:14px;
+           padding:18px 22px; flex:1; }
+  .stage b { display:block; font-size:19px; margin-bottom:6px; }
+  .stage span { color:#8b98a9; font-size:14.5px; line-height:1.45; }
+  .arrow { color:#4f8ff7; font-size:26px; font-weight:700; }
+  .s1 b { color:#4f8ff7; } .s2 b { color:#e3b341; } .s3 b { color:#3fb950; } .s4 b { color:#b57ee5; }
+  .term { background:#0d1420; border:1px solid #223047; border-radius:12px;
+          padding:18px 24px; font-family:Consolas,monospace; font-size:15.5px; line-height:1.75; }
+  .p { color:#3fb950; } .k { color:#4f8ff7; } .c { color:#8b98a9; } .y { color:#e3b341; } .r { color:#f47067; }
+  .foot { position:absolute; bottom:26px; right:56px; color:#5b6878; font-size:14px; }
+</style></head><body>
+  <div class="title">second-<span class="accent">nature</span></div>
+  <div class="tag">Self-learning loop for Claude Code — the model learns skills from its own sessions, behind a human gate</div>
+  <div class="loop">
+    <div class="stage s1"><b>1 · capture</b><span>corrections, tool failures, fix-after-fail — parsed from transcripts, zero tokens</span></div>
+    <div class="arrow">→</div>
+    <div class="stage s2"><b>2 · decide</b><span>the model judges; SKIP verdicts are remembered forever</span></div>
+    <div class="arrow">→</div>
+    <div class="stage s3"><b>3 · distill</b><span>SKILL.md draft → staging, never auto-activates</span></div>
+    <div class="arrow">→</div>
+    <div class="stage s4"><b>4 · curate</b><span>usage telemetry, stale after 30d, archive after 90d</span></div>
+  </div>
+  <div class="term">
+    <div><span class="c">&gt;</span> <span class="k">reflect</span>()</div>
+    <div><span class="p">✓</span> new_signals: <span class="y">5</span> &nbsp;<span class="c">(1 correction · 3 failures · 1 fix-after-fail)</span></div>
+    <div><span class="p">✓</span> lesson_candidates: <span class="y">2</span></div>
+    <div>&nbsp;&nbsp;<span class="r">correction:</span>use-scss-modules-not-inline-styles <span class="c">— seen 1×, surfaced immediately</span></div>
+    <div>&nbsp;&nbsp;<span class="y">failure:</span>webpack-config-drift <span class="c">— seen 3×, similar skill found: build-recipes (patch it)</span></div>
+    <div><span class="c">→ judge each: submit_draft() the worthy, skip_lesson() the noise</span></div>
+  </div>
+  <div class="foot">deterministic MCP mechanics · the session model does the thinking · no background LLM calls</div>
+</body></html>

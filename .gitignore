@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+requirements-lock.txt
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
