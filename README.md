@@ -31,6 +31,8 @@ Two principles you won't find together elsewhere: **the server does only determi
 - **FTS5 search over past sessions** — "when did I fix exactly this error" finds the actual transcript
 - **Curator** — usage telemetry; unused drafts go stale in 30 days, archived in 90
 - **Smart nudge hooks** — silent by default; they speak only on a correction (instantly) or accumulated work; a declined nudge stays declined
+- **Visible audit trail** — every loop event surfaces in chat as a ⛩ marker line: what fired, why, what was staged or skipped
+- **dream/wake integration** — the [dream-skill](https://github.com/timoncool/dream-skill) consolidation pass harvests satori's staging and promotes/retires drafts through its validator gate
 
 ## Quick Start
 
@@ -74,7 +76,7 @@ session transcript
 ④ curate    usage telemetry, stale at 30d, archive at 90d
 ```
 
-**Hooks** (all optional, all silent by default): `UserPromptSubmit` — on a correction injects one line "fix it, then reflect" (series-deduplicated); on ≥25 accumulated tool calls — same, and repeats only after the next full threshold; `Stop` — same threshold at turn end; `SessionEnd` — silent capture directly in Python, no model involved at all.
+**Hooks** (all optional, all silent by default): `UserPromptSubmit` — on a correction injects one line "fix it, then reflect" (series-deduplicated); on ≥25 accumulated tool calls — same, and repeats only after the next full threshold; `Stop` — same threshold at turn end; `SessionEnd` — silent capture directly in Python, no model involved at all. When a nudge does fire, the model opens its reply with a visible `⛩ satori: ...` marker and reports what was recorded — you always see the loop working.
 
 **Anti-pollution by construction:** the loop never writes into Claude's memory (only its own SQLite + staging); context injections are one line and only when warranted; an ignored nudge doesn't nag.
 
@@ -100,6 +102,16 @@ session transcript
 | `SN_NUDGE_MIN_CALLS` | 25 | accumulated work before a nudge |
 | `SN_NUDGE_COOLDOWN_MIN` / `SN_CORR_COOLDOWN_MIN` | 10 / 3 | nudge cooldowns |
 | `SN_STOP_NUDGE` | 1 | Stop-hook nudge (0 = off) |
+
+## Works best with dream-skill
+
+[**dream-skill**](https://github.com/timoncool/dream-skill) is this project's sibling — memory consolidation for Claude Code (dream = read-only pass, wake = gated apply, full rollback). satori handles **procedural memory** (skills), dream/wake handles **factual memory** (notes, rules, index) — and they meet in the middle:
+
+- dream's **Skill harvest** phase reads satori's `staging/` + usage telemetry and proposes `promote_skill` / `retire_skill` alongside its memory proposals
+- the same gate applies: your checkboxes, or an independent validator agent in auto mode (with a mandatory draft checklist: `Use when` trigger, no injection markers, no duplicates)
+- wake activates or retires drafts, logs every promotion, and its `rollback` restores skills too
+
+Each works standalone; together the cycle is complete: сон → пробуждение → прозрение (dream → wake → satori).
 
 ## Standing on shoulders
 
