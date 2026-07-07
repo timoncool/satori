@@ -36,6 +36,23 @@ Two principles you won't find together elsewhere: **the server does only determi
 
 ## Quick Start
 
+**Easiest — let Claude install it.** Paste this message into Claude Code:
+
+```text
+Install the satori self-learning loop from https://github.com/timoncool/satori:
+1) clone the repo to a permanent location (not a temp dir — the MCP runs from it);
+2) create a venv inside it and install the single dependency: fastmcp;
+3) register the MCP in my .mcp.json (project or global) as "satori" with
+   command = absolute path to the venv python and args = [absolute path to server.py];
+4) recommended: add the three nudge hooks (UserPromptSubmit / Stop / SessionEnd,
+   all calling hooks/nudge.py with the venv python — exact JSON is in the README
+   "Quick Start" step 3) into ~/.claude/settings.json, PRESERVING my existing hooks;
+5) smoke-test: import server in the venv and show me what got configured;
+then remind me to restart Claude Code / Desktop so the MCP and hooks load.
+```
+
+That's it — Claude clones, wires configs, verifies and reports. Manual way:
+
 1. **Clone & install the one dependency**
    ```bash
    git clone https://github.com/timoncool/satori.git
