@@ -115,9 +115,11 @@ def main() -> None:
             emit({"hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": (
-                    "satori: пользователь только что поправил тебя — после того как "
-                    "починишь по существу, вызови mcp__satori__reflect (коррекция = "
-                    "кандидат в урок с первого раза).")}})
+                    "⛩ satori-хук: в сообщении юзера коррекция. ПЕРВОЙ строкой видимого "
+                    "ответа покажи маркер «⛩ satori: поймал коррекцию → после фикса "
+                    "зарефлексирую». Почини по существу, затем вызови mcp__satori__reflect "
+                    "и ЯВНО 1-2 строками скажи юзеру, что записалось в кандидаты / что "
+                    "ушло в драфт / что скипнуто и почему.")}})
             return
 
     # Nudge по наработке: отказ значит отказ ( re-nudge только после нового полного порога)
@@ -126,7 +128,9 @@ def main() -> None:
                 and now - st.get("nudge_ts", 0) > COOLDOWN_S)
     if not workload:
         return
-    msg = (f"satori: с последней рефлексии накопилось ~{calls} tool calls — "
+    msg = (f"⛩ satori-хук: накопилось ~{calls} tool calls. ПЕРВОЙ строкой видимого "
+           f"ответа покажи юзеру маркер «⛩ satori: {calls} calls → reflect», вызови "
+           f"mcp__satori__reflect и ЯВНО скажи, что записалось/скипнуто и почему — "
            f"вызови mcp__satori__reflect (или проигнорируй, напомню после "
            f"следующих {MIN_CALLS}).")
     st.update(nudge_ts=now, nudged_at_calls=calls)

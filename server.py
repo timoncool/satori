@@ -76,7 +76,10 @@ mcp = FastMCP(
         "`loop_status` shows telemetry. Never put secrets in drafts. "
         "Draft descriptions must be PUSHY with concrete trigger phrases (Claude "
         "undertriggers skills — official skill-creator guidance): 'Use when X, Y, "
-        "or the user mentions Z, even if they don't explicitly ask.'"))
+        "or the user mentions Z, even if they don't explicitly ask.' "
+        "VISIBILITY: the user wants a visible audit trail — after every reflect/"
+        "submit_draft/skip_lesson report in 1-2 plain chat lines (start with ⛩) "
+        "what fired, why, and what was recorded/staged/skipped."))
 
 
 def db() -> sqlite3.Connection:
