@@ -131,11 +131,11 @@ I build open-source software and do AI research. Most of what I create is free a
 
 ## Star History
 
-<a href="https://star-history.com/#timoncool/satori&Date">
+<a href="https://www.star-history.com/?type=date&repos=timoncool%2Fsatori">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=timoncool/satori&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=timoncool/satori&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=timoncool/satori&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=timoncool/satori&type=date&theme=dark&legend=top-left&sealed_token=Nr_Cv7mpYXhOuNi79SAapdCu9rKnbwduDirXMFTUUBXY99WG2dpql9Br5BsNkg2ulDhShqkyMUkcG2Mj5EqD1ToAlICw6T2b2dgpcBvwiOj8MHlCLqoXrpyaYcKVDiMm91gSvi520Xs1vdoonbuCGzNrFdljB4QuLJ4JUsYER0EDJFrBp2zukvjZsuSI" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=timoncool/satori&type=date&legend=top-left&sealed_token=Nr_Cv7mpYXhOuNi79SAapdCu9rKnbwduDirXMFTUUBXY99WG2dpql9Br5BsNkg2ulDhShqkyMUkcG2Mj5EqD1ToAlICw6T2b2dgpcBvwiOj8MHlCLqoXrpyaYcKVDiMm91gSvi520Xs1vdoonbuCGzNrFdljB4QuLJ4JUsYER0EDJFrBp2zukvjZsuSI" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=timoncool/satori&type=date&legend=top-left&sealed_token=Nr_Cv7mpYXhOuNi79SAapdCu9rKnbwduDirXMFTUUBXY99WG2dpql9Br5BsNkg2ulDhShqkyMUkcG2Mj5EqD1ToAlICw6T2b2dgpcBvwiOj8MHlCLqoXrpyaYcKVDiMm91gSvi520Xs1vdoonbuCGzNrFdljB4QuLJ4JUsYER0EDJFrBp2zukvjZsuSI" />
  </picture>
 </a>
 
