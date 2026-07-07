@@ -230,12 +230,23 @@ def reflect(transcript_path: str = "") -> dict:
                 conn.execute("""INSERT INTO skill_usage(name,use_count,last_used)
                     VALUES(?,1,?) ON CONFLICT(name) DO UPDATE SET
                     use_count=use_count+1, last_used=?""", (name, now, now))
-        # Куратор: пометить протухшие staged-драфты
-        stale_cut = now - STALE_DAYS * 86400
-        stale = [r[0] for r in conn.execute(
-            """SELECT name FROM skill_usage WHERE staged_ts IS NOT NULL
-               AND (last_used IS NULL OR last_used < ?) AND staged_ts < ?""",
-            (stale_cut, stale_cut))]
+        # Куратор: stale в 30д, архив в 90д; проверенные (use_count>=3) стареют вдвое медленнее
+        stale, archived = [], []
+        for nm, uc, lu, sts in conn.execute(
+                """SELECT name,use_count,last_used,staged_ts FROM skill_usage
+                   WHERE staged_ts IS NOT NULL"""):
+            src = STAGING / nm
+            if not (src / "SKILL.md").is_file():
+                continue
+            mult = 2 if (uc or 0) >= 3 else 1
+            idle_d = (now - max(lu or 0, sts or 0)) / 86400
+            if idle_d > ARCHIVE_DAYS * mult:
+                (ROOT / "archive").mkdir(exist_ok=True)
+                shutil.move(str(src), str(ROOT / "archive" / f"{nm}-{time.strftime('%Y%m%d')}"))
+                conn.execute("UPDATE skill_usage SET staged_ts=NULL WHERE name=?", (nm,))
+                archived.append(nm)
+            elif idle_d > STALE_DAYS * mult:
+                stale.append(nm)
         candidates = []
         for key, kind, excerpt, cnt in conn.execute(
                 """SELECT key,kind,excerpt,seen_count FROM lessons
@@ -252,6 +263,7 @@ def reflect(transcript_path: str = "") -> dict:
             "segment": {k: (sorted(v) if isinstance(v, set) else v) for k, v in stats.items()},
             "lesson_candidates": candidates,
             "stale_staged_skills": stale,
+            "archived_staged_skills": archived,
             "next": ("Judge each candidate: recurring & generalizable & not already in a "
                      "skill/recipe/memory -> submit_draft (patch similar_skills[0] if any); "
                      "one-off noise -> skip_lesson. User corrections surface after a SINGLE "
