@@ -4,6 +4,7 @@
 
 **A self-learning loop for Claude Code — the model learns skills from its own sessions, behind a human gate.**
 
+[![Status](https://img.shields.io/badge/status-beta-orange?style=flat-square)](#-beta-disclaimer)
 [![License](https://img.shields.io/github/license/timoncool/satori?style=flat-square)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/timoncool/satori?style=flat-square)](https://github.com/timoncool/satori/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/timoncool/satori?style=flat-square)](https://github.com/timoncool/satori/commits)
@@ -13,6 +14,9 @@
 ![satori](docs/screenshots/hero.png)
 
 </div>
+
+> ### ⚠️ Beta disclaimer
+> This is **beta software** I build for myself and share with the community as-is. It parses your session transcripts, stores lesson data locally and drafts skills that — once **you** approve them — will instruct your future Claude sessions. Read `server.py` and the drafts in `staging/` before approving anything. It works on my setup; I can't guarantee yours and **take no responsibility** for what your agent learns. Nothing self-activates and everything is reversible — but the judgment is yours.
 
 satori is an MCP server + hooks that give Claude Code a closed self-learning loop: user corrections and tool failures become lesson candidates, lessons become skill drafts, drafts become active skills — but only through a gate. Windows-native, works in Claude Desktop, zero bash wrappers.
 

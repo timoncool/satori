@@ -4,6 +4,7 @@
 
 **Луп самообучения для Claude Code — модель учится скиллам на собственных сессиях, за человеческим гейтом.**
 
+[![Status](https://img.shields.io/badge/status-beta-orange?style=flat-square)](#-бета-дисклеймер)
 [![License](https://img.shields.io/github/license/timoncool/satori?style=flat-square)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/timoncool/satori?style=flat-square)](https://github.com/timoncool/satori/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/timoncool/satori?style=flat-square)](https://github.com/timoncool/satori/commits)
@@ -13,6 +14,9 @@
 ![satori](docs/screenshots/hero.png)
 
 </div>
+
+> ### ⚠️ Бета-дисклеймер
+> Это **бета**, которую я делаю для себя и делюсь с сообществом как есть. Сервер парсит транскрипты твоих сессий, хранит уроки локально и дистиллирует скиллы, которые — после **твоего** одобрения — будут инструктировать будущие сессии Claude. Прочитай `server.py` и драфты в `staging/` перед апрувом. У меня работает; за твой сетап **ответственности не несу** — в том числе за то, чему научится твой агент. Само ничего не активируется, всё обратимо — но судья тут ты.
 
 MCP-сервер + хуки, дающие Claude Code замкнутый цикл самообучения: коррекции юзера и падения тулзов превращаются в кандидаты-уроки, уроки — в драфты скиллов, драфты — в боевые скиллы, но только через гейт. Windows-native, работает в Claude Desktop, ноль bash-обёрток.
 
