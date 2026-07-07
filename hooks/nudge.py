@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""second-nature nudge hook. Events: prompt-submit | stop | session-end.
+"""satori nudge hook. Events: prompt-submit | stop | session-end.
 
 Молчит по умолчанию. Голос: коррекция юзера в текущем сообщении (мгновенно)
 или накопленная работа с последнего reflect (>=SN_NUDGE_MIN_CALLS tool calls).
@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path.home() / ".claude" / "second-nature"
+ROOT = Path.home() / ".claude" / "satori"
 STATE_PATH = ROOT / "nudge_state.json"
 DB_PATH = ROOT / "state.db"
 
@@ -115,8 +115,8 @@ def main() -> None:
             emit({"hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": (
-                    "second-nature: пользователь только что поправил тебя — после того как "
-                    "починишь по существу, вызови mcp__second-nature__reflect (коррекция = "
+                    "satori: пользователь только что поправил тебя — после того как "
+                    "починишь по существу, вызови mcp__satori__reflect (коррекция = "
                     "кандидат в урок с первого раза).")}})
             return
 
@@ -126,8 +126,8 @@ def main() -> None:
                 and now - st.get("nudge_ts", 0) > COOLDOWN_S)
     if not workload:
         return
-    msg = (f"second-nature: с последней рефлексии накопилось ~{calls} tool calls — "
-           f"вызови mcp__second-nature__reflect (или проигнорируй, напомню после "
+    msg = (f"satori: с последней рефлексии накопилось ~{calls} tool calls — "
+           f"вызови mcp__satori__reflect (или проигнорируй, напомню после "
            f"следующих {MIN_CALLS}).")
     st.update(nudge_ts=now, nudged_at_calls=calls)
     state_save(st)

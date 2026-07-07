@@ -1,20 +1,20 @@
 <div align="center">
 
-# second-nature
+# satori
 
 **A self-learning loop for Claude Code — the model learns skills from its own sessions, behind a human gate.**
 
-[![License](https://img.shields.io/github/license/timoncool/second-nature?style=flat-square)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/timoncool/second-nature?style=flat-square)](https://github.com/timoncool/second-nature/stargazers)
-[![Last Commit](https://img.shields.io/github/last-commit/timoncool/second-nature?style=flat-square)](https://github.com/timoncool/second-nature/commits)
+[![License](https://img.shields.io/github/license/timoncool/satori?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/timoncool/satori?style=flat-square)](https://github.com/timoncool/satori/stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/timoncool/satori?style=flat-square)](https://github.com/timoncool/satori/commits)
 
 **[English](README.md)** · **[Русский](README_RU.md)**
 
-![second-nature](docs/screenshots/hero.png)
+![satori](docs/screenshots/hero.png)
 
 </div>
 
-second-nature is an MCP server + hooks that give Claude Code a closed self-learning loop: user corrections and tool failures become lesson candidates, lessons become skill drafts, drafts become active skills — but only through a gate. Windows-native, works in Claude Desktop, zero bash wrappers.
+satori is an MCP server + hooks that give Claude Code a closed self-learning loop: user corrections and tool failures become lesson candidates, lessons become skill drafts, drafts become active skills — but only through a gate. Windows-native, works in Claude Desktop, zero bash wrappers.
 
 Two principles you won't find together elsewhere: **the server does only deterministic mechanics** (parsing, counters, storage, validation) — the thinking is done by the calling model right in the session, no background LLM calls, no extra bills; and **nothing self-activates** — drafts sit in staging until explicitly approved.
 
@@ -36,15 +36,15 @@ Two principles you won't find together elsewhere: **the server does only determi
 
 1. **Clone & install the one dependency**
    ```bash
-   git clone https://github.com/timoncool/second-nature.git
-   cd second-nature && python -m venv .venv && .venv\Scripts\pip install fastmcp
+   git clone https://github.com/timoncool/satori.git
+   cd satori && python -m venv .venv && .venv\Scripts\pip install fastmcp
    ```
 
 2. **Register the MCP** — in your project's `.mcp.json` (or global config):
    ```jsonc
-   "second-nature": {
-     "command": "<path>\\second-nature\\.venv\\Scripts\\python.exe",
-     "args": ["<path>\\second-nature\\server.py"]
+   "satori": {
+     "command": "<path>\\satori\\.venv\\Scripts\\python.exe",
+     "args": ["<path>\\satori\\server.py"]
    }
    ```
 
@@ -131,11 +131,11 @@ I build open-source software and do AI research. Most of what I create is free a
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=timoncool%2Fsecond-nature&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=timoncool%2Fsatori&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=timoncool/second-nature&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=timoncool/second-nature&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=timoncool/second-nature&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=timoncool/satori&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=timoncool/satori&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=timoncool/satori&type=date&legend=top-left" />
  </picture>
 </a>
 

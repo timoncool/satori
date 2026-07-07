@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""second-nature — self-learning loop MCP for Claude Code (Windows-native).
+"""satori — self-learning loop MCP for Claude Code (Windows-native).
 
 4-stage loop: capture -> decide -> distill -> curate.
 The MCP does deterministic mechanics (parsing, counters, storage, validation);
 the calling model in-session does the thinking. No background `claude -p` calls.
 
-Storage: ~/.claude/second-nature/{state.db, staging/, backups/}
+Storage: ~/.claude/satori/{state.db, staging/, backups/}
 """
 
 import json
@@ -19,7 +19,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 HOME = Path.home()
-ROOT = HOME / ".claude" / "second-nature"
+ROOT = HOME / ".claude" / "satori"
 STAGING = ROOT / "staging"
 BACKUPS = ROOT / "backups"
 DB_PATH = ROOT / "state.db"
@@ -63,7 +63,7 @@ INJECTION_RX = re.compile(
 KEY_STOP = re.compile(r"[^a-z0-9а-яё_./-]+", re.IGNORECASE)
 
 mcp = FastMCP(
-    "second-nature",
+    "satori",
     instructions=(
         "Self-learning loop (4 stages: capture->decide->distill->curate). "
         "CALL `reflect` SEVERAL TIMES PER SESSION: after finishing any substantial task "
@@ -321,7 +321,7 @@ def submit_draft(name: str, markdown: str, lesson_key: str = "", patches: str = 
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
             shutil.copy2(dest, BACKUPS / f"{name}.{int(time.time())}.md")
-        stamp = (f"\n<!-- second-nature: staged {time.strftime('%Y-%m-%d')}"
+        stamp = (f"\n<!-- satori: staged {time.strftime('%Y-%m-%d')}"
                  + (f", patches '{patches}'" if patches else "")
                  + (f", lesson '{lesson_key}'" if lesson_key else "")
                  + (f", pinned '{pinned_project}'" if pinned_project else "") + " -->\n")
