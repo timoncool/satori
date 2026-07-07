@@ -131,11 +131,11 @@ I build open-source software and do AI research. Most of what I create is free a
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=timoncool%2Fsatori&type=date&legend=top-left">
+<a href="https://star-history.com/#timoncool/satori&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=timoncool/satori&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=timoncool/satori&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=timoncool/satori&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=timoncool/satori&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=timoncool/satori&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=timoncool/satori&type=Date" />
  </picture>
 </a>
 
