@@ -52,8 +52,8 @@ SECRET_RX = re.compile(
     r"(?i)((?:api[_-]?key|token|password|passwd|secret|access[_-]?key)"
     r"['\"]?\s*[:=]\s*['\"]?)([^\s'\",;]{8,})|"
     r"((?:bearer|authorization)['\"]?\s*[:=]?\s+)([^\s'\",;]{12,})|"
-    r"\b(glpat-[\w-]{15,}|sk-[\w-]{20,}|hf_[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|"
-    r"gho_[A-Za-z0-9]{20,}|npm_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,}|"
+    r"\b(glpat-[\w-]{15,}|sk-[\w-]{20,}|hf_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|"
+    r"github_pat_[A-Za-z0-9_]{20,}|npm_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{30,}|"
     r"xox[bp]-[\w-]{20,}|AKIA[A-Z0-9]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\."
     r"[A-Za-z0-9_-]{10,})\b|"
     r"([a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s/@]+@)|"  # user:pass@ в URL
