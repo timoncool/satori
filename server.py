@@ -73,7 +73,10 @@ mcp = FastMCP(
         "similar existing skill reflect points to, over creating new). Drafts land in "
         "staging, NEVER auto-activate: the user (or dream/wake) calls `approve_draft`. "
         "Use `session_search` to recall how past sessions solved something. "
-        "`loop_status` shows telemetry. Never put secrets in drafts."))
+        "`loop_status` shows telemetry. Never put secrets in drafts. "
+        "Draft descriptions must be PUSHY with concrete trigger phrases (Claude "
+        "undertriggers skills — official skill-creator guidance): 'Use when X, Y, "
+        "or the user mentions Z, even if they don't explicitly ask.'"))
 
 
 def db() -> sqlite3.Connection:
@@ -291,7 +294,8 @@ def submit_draft(name: str, markdown: str, lesson_key: str = "", patches: str = 
     fm = markdown.split("---", 2)[1]
     if not re.search(r"description:\s*[\"']?Use when ", fm):
         return {"error": "description must start with 'Use when ...' — it is the recall "
-                         "trigger, state WHEN to recall this, not what it does"}
+                         "trigger; state WHEN to recall this (not what it does) and be "
+                         "pushy: list concrete phrases/situations, skills undertrigger"}
     if SECRET_RX.search(markdown):
         return {"error": "draft contains something that looks like a secret — redact it"}
     if INJECTION_RX.search(markdown):
