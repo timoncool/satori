@@ -8,6 +8,7 @@ the calling model in-session does the thinking. No background `claude -p` calls.
 Storage: ~/.claude/satori/{state.db, staging/, backups/}
 """
 
+import hashlib
 import json
 import os
 import re
@@ -111,10 +112,12 @@ def db() -> sqlite3.Connection:
       content, session UNINDEXED, ts UNINDEXED);
     CREATE TABLE IF NOT EXISTS indexed_files(path TEXT PRIMARY KEY, offset INTEGER);
     """)
-    try:
-        conn.execute("ALTER TABLE skill_usage ADD COLUMN pinned_project TEXT")
-    except sqlite3.OperationalError:
-        pass
+    for ddl in ("ALTER TABLE skill_usage ADD COLUMN pinned_project TEXT",
+                "ALTER TABLE skill_usage ADD COLUMN lesson_key TEXT"):
+        try:
+            conn.execute(ddl)
+        except sqlite3.OperationalError:
+            pass
     return conn
 
 
@@ -156,18 +159,31 @@ def find_transcript(transcript_path: str) -> Path | None:
 def parse_new_lines(conn: sqlite3.Connection, path: Path) -> tuple[list, dict]:
     """Читает транскрипт с сохранённого offset'а. Возвращает (сигналы, статистика сегмента)."""
     off_key = f"offset:{path}"
+    fp_key = f"fp:{path}"
     row = conn.execute("SELECT value FROM meta WHERE key=?", (off_key,)).fetchone()
     offset = int(row[0]) if row else 0
     size = path.stat().st_size
-    if size < offset:  # файл пересоздан
+    # пересоздание: размер уменьшился ИЛИ первые байты сменились (rewrite тем же/большим размером)
+    with path.open("rb") as fb:
+        fp = hashlib.sha1(fb.read(256)).hexdigest()
+    prev_fp = conn.execute("SELECT value FROM meta WHERE key=?", (fp_key,)).fetchone()
+    if size < offset or (prev_fp and prev_fp[0] != fp):
         offset = 0
     signals, stats = [], {"tool_calls": 0, "file_edits": 0, "user_msgs": 0, "skills_seen": set()}
     prev_failed = None
-    with path.open("r", encoding="utf-8", errors="replace") as f:
+    # читаем байтами и обрабатываем только ЗАВЕРШЁННЫЕ строки: writer может быть mid-flush,
+    # f.tell() после частичной строки указал бы в середину будущей записи (потеря сигнала)
+    with path.open("rb") as f:
         f.seek(offset)
-        for line in f:
+        data = f.read(64 * 1024 * 1024)  # хвост >64МБ между reflect'ами нереален
+    last_nl = data.rfind(b"\n")
+    if last_nl == -1:
+        conn.execute("INSERT OR REPLACE INTO meta VALUES(?,?)", (fp_key, fp))
+        return signals, stats
+    new_offset = offset + last_nl + 1
+    for line in data[:last_nl].split(b"\n"):
             try:
-                rec = json.loads(line)
+                rec = json.loads(line.decode("utf-8", errors="replace"))
             except json.JSONDecodeError:
                 continue
             msg = rec.get("message") or {}
@@ -200,8 +216,8 @@ def parse_new_lines(conn: sqlite3.Connection, path: Path) -> tuple[list, dict]:
                         locus = m.group(0) if m else "generic"
                         signals.append(("failure", f"{locus}: {txt[:220]}"))
                         prev_failed = locus
-        new_offset = f.tell()
     conn.execute("INSERT OR REPLACE INTO meta VALUES(?,?)", (off_key, str(new_offset)))
+    conn.execute("INSERT OR REPLACE INTO meta VALUES(?,?)", (fp_key, fp))
     return signals, stats
 
 
@@ -232,7 +248,10 @@ def similar_skills(query: str, limit: int = 3) -> list[dict]:
 
 
 def _archive_skill(name: str, pinned: str | None, tag: str) -> list[str]:
-    """Перенести живой скилл + staging-копию в архив лупа (обратимо). Возвращает что убрал."""
+    """Перенести живой скилл + staging-копию в архив лупа (обратимо). Возвращает что убрал.
+
+    move может упасть посреди cross-device copy (pinned на другом диске, AV-лок) —
+    не роняем вызывающего, БД обновляется только по подтверждённым переносам."""
     ts = time.strftime("%Y%m%d-%H%M%S")
     (ROOT / "archive").mkdir(exist_ok=True)
     moved = []
@@ -245,7 +264,12 @@ def _archive_skill(name: str, pinned: str | None, tag: str) -> list[str]:
         dst = ROOT / "archive" / f"{name}-{tag}-{ts}"
         while dst.exists():
             dst = ROOT / "archive" / f"{name}-{tag}-{ts}-{len(moved)}"
-        shutil.move(str(d), str(dst))
+        try:
+            shutil.move(str(d), str(dst))
+        except OSError:
+            continue  # источник остаётся на месте (move не удаляет src до успешного copy)
+        if d.exists() or not dst.is_dir():  # полу-перенос — не засчитываем
+            continue
         moved.append(str(d))
     return moved
 
@@ -292,19 +316,23 @@ def reflect(transcript_path: str = "") -> dict:
                     use_count=use_count+1, last_used=?""", (name, now, now))
         # Куратор: stale в 30д, архив в 90д; проверенные (use_count>=3) стареют вдвое медленнее.
         # Ретайрит ЖИВОЙ скилл (не только staging-копию) — иначе автоактивированные не стареют.
-        stale, archived = [], []
+        stale, archived, reactivated = [], [], []
         for nm, uc, lu, sts, pin in conn.execute(
                 """SELECT name,use_count,last_used,staged_ts,pinned_project FROM skill_usage
                    WHERE staged_ts IS NOT NULL"""):
             live = any((b / nm / "SKILL.md").is_file() for b in skill_bases(pin))
             if not live:
+                # драфт застейджен, но не активирован (краш между commit и copy) — дожать
+                if AUTO_APPROVE and (STAGING / nm / "SKILL.md").is_file():
+                    if _activate_staged(nm, pin):
+                        reactivated.append(nm)
                 continue
             mult = 2 if (uc or 0) >= 3 else 1
             idle_d = (now - max(lu or 0, sts or 0)) / 86400
             if idle_d > ARCHIVE_DAYS * mult:
-                _archive_skill(nm, pin, "stale")
-                conn.execute("UPDATE skill_usage SET staged_ts=NULL WHERE name=?", (nm,))
-                archived.append(nm)
+                if _archive_skill(nm, pin, "stale"):  # БД трогаем только по факту переноса
+                    conn.execute("UPDATE skill_usage SET staged_ts=NULL WHERE name=?", (nm,))
+                    archived.append(nm)
             elif idle_d > STALE_DAYS * mult:
                 stale.append(nm)
         candidates = []
@@ -325,6 +353,7 @@ def reflect(transcript_path: str = "") -> dict:
             "lesson_candidates": candidates,
             "stale_staged_skills": stale,
             "archived_staged_skills": archived,
+            "reactivated_skills": reactivated,
             "next": ("Judge each candidate: recurring & generalizable & not already in a "
                      "skill/recipe/memory -> submit_draft (patch similar_skills[0] if any); "
                      "one-off noise -> skip_lesson. User corrections surface after a SINGLE "
@@ -348,6 +377,36 @@ def skip_lesson(key: str, reason: str) -> dict:
         return {"skipped": bool(n), "key": key}
     finally:
         conn.close()
+
+
+def _activate_staged(name: str, pinned: str | None) -> str | None:
+    """Атомарно активировать staging-драфт в живые скиллы. None = отказ (рукописный скилл)."""
+    src = STAGING / name / "SKILL.md"
+    if not src.is_file():
+        return None
+    base = (Path(pinned) / ".claude" / "skills") if pinned else USER_SKILLS
+    live = base / name / "SKILL.md"
+    # Provenance-guard: не перезаписывать чужой рукописный скилл (без satori-штампа)
+    if live.exists() and "<!-- satori:" not in live.read_text(encoding="utf-8", errors="replace"):
+        return None
+    live.parent.mkdir(parents=True, exist_ok=True)
+    if live.exists():
+        shutil.copy2(live, BACKUPS / f"{name}.pre-activate.{int(time.time())}.md")
+    # tmp + os.replace: параллельная сессия никогда не прочитает полузаписанный SKILL.md
+    tmp = live.with_suffix(".md.satori-tmp")
+    shutil.copy2(src, tmp)
+    os.replace(tmp, live)
+    return str(live)
+
+
+def _staged_lesson(name: str) -> str:
+    """lesson_key из provenance-штампа существующего staging-драфта ('' если нет)."""
+    p = STAGING / name / "SKILL.md"
+    if not p.is_file():
+        return ""
+    m = re.search(r"<!-- satori:.*?lesson '([^']*)'", p.read_text(encoding="utf-8",
+                                                                  errors="replace"))
+    return m.group(1) if m else ""
 
 
 @mcp.tool()
@@ -380,6 +439,12 @@ def submit_draft(name: str, markdown: str, lesson_key: str = "", patches: str = 
                          "to an agent; rephrase without override/conceal language"}
     if pinned_project and not Path(pinned_project).is_dir():
         return {"error": f"pinned_project is not an existing directory: {pinned_project}"}
+    # Коллизия имён: чужой staging-драфт от ДРУГОГО урока молча не затираем
+    existing_lesson = _staged_lesson(name)
+    if existing_lesson and existing_lesson != lesson_key and not patches:
+        return {"error": (f"staged draft '{name}' already exists from a different lesson "
+                          f"('{existing_lesson}'). Pass patches='{name}' to deliberately "
+                          "merge/update it, or pick another name.")}
     conn = db()
     try:
         dest = STAGING / name / "SKILL.md"
@@ -390,11 +455,15 @@ def submit_draft(name: str, markdown: str, lesson_key: str = "", patches: str = 
                  + (f", patches '{patches}'" if patches else "")
                  + (f", lesson '{lesson_key}'" if lesson_key else "")
                  + (f", pinned '{pinned_project}'" if pinned_project else "") + " -->\n")
-        dest.write_text(markdown.rstrip() + stamp, encoding="utf-8")
+        tmp = dest.with_suffix(".md.satori-tmp")
+        tmp.write_text(markdown.rstrip() + stamp, encoding="utf-8")
+        os.replace(tmp, dest)
         now = time.time()
-        conn.execute("""INSERT INTO skill_usage(name,staged_ts,pinned_project) VALUES(?,?,?)
-            ON CONFLICT(name) DO UPDATE SET staged_ts=?, pinned_project=?""",
-            (name, now, pinned_project or None, now, pinned_project or None))
+        conn.execute("""INSERT INTO skill_usage(name,staged_ts,pinned_project,lesson_key)
+            VALUES(?,?,?,?) ON CONFLICT(name) DO UPDATE SET
+            staged_ts=?, pinned_project=?, lesson_key=?""",
+            (name, now, pinned_project or None, lesson_key or None,
+             now, pinned_project or None, lesson_key or None))
         if lesson_key:
             conn.execute("UPDATE lessons SET status='staged' WHERE key=?", (lesson_key,))
         conn.commit()
@@ -404,18 +473,12 @@ def submit_draft(name: str, markdown: str, lesson_key: str = "", patches: str = 
     finally:
         conn.close()
     # Полный автомат: активируем сразу (обратимо через retire_skill)
-    base = Path(pinned_project) / ".claude" / "skills" if pinned_project else USER_SKILLS
-    live = base / name / "SKILL.md"
-    # Provenance-guard: не перезаписывать чужой рукописный скилл (без satori-штампа) авто-магией
-    if live.exists() and "<!-- satori:" not in live.read_text(encoding="utf-8", errors="replace"):
+    live = _activate_staged(name, pinned_project or None)
+    if not live:
         return {"staged": str(dest), "pinned_project": pinned_project or "global",
                 "note": (f"A hand-written skill '{name}' already exists and was NOT overwritten. "
                          "Draft kept in staging — approve_draft to override deliberately, or "
                          "rename the draft.")}
-    live.parent.mkdir(parents=True, exist_ok=True)
-    if live.exists():
-        shutil.copy2(live, BACKUPS / f"{name}.pre-activate.{int(time.time())}.md")
-    shutil.copy2(dest, live)
     conn = db()
     try:
         if lesson_key:
@@ -423,7 +486,7 @@ def submit_draft(name: str, markdown: str, lesson_key: str = "", patches: str = 
         conn.commit()
     finally:
         conn.close()
-    return {"activated": str(live), "staged_copy": str(dest),
+    return {"activated": live, "staged_copy": str(dest),
             "note": ("AUTO-ACTIVATED — loads next session/restart. Announce it to the "
                      "user with a ⛩ line; `retire_skill` reverts in one call.")}
 
@@ -451,11 +514,14 @@ def approve_draft(name: str, dest_dir: str = "") -> dict:
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists():
         shutil.copy2(dest, BACKUPS / f"{name}.pre-approve.{int(time.time())}.md")
-    shutil.copy2(src, dest)
+    tmp = dest.with_suffix(".md.satori-tmp")
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dest)
     conn = db()
     try:
-        conn.execute("UPDATE lessons SET status='promoted' WHERE status='staged' AND note IS NULL AND key LIKE ?",
-                     (f"%{name}%",))
+        # точная связка через lesson_key из skill_usage (LIKE задевал чужие уроки)
+        conn.execute("""UPDATE lessons SET status='promoted' WHERE status='staged'
+            AND key=(SELECT lesson_key FROM skill_usage WHERE name=?)""", (name,))
         conn.commit()
     finally:
         conn.close()
@@ -472,11 +538,12 @@ def retire_skill(name: str) -> dict:
         return {"error": "invalid skill name"}
     conn = db()
     try:
-        row = conn.execute("SELECT pinned_project FROM skill_usage WHERE name=?",
+        row = conn.execute("SELECT pinned_project, lesson_key FROM skill_usage WHERE name=?",
                            (name,)).fetchone()
     finally:
         conn.close()
     pinned = row[0] if row and row[0] else None
+    linked_lesson = row[1] if row and row[1] else None
     # убрать ЖИВОЙ скилл (все базы) + staging-копию в архив
     moved = _archive_skill(name, pinned, "retired")
     # восстановить чужой рукописный скилл, если satori перезаписал его при активации
@@ -491,10 +558,10 @@ def retire_skill(name: str) -> dict:
     conn = db()
     try:
         conn.execute("UPDATE skill_usage SET staged_ts=NULL WHERE name=?", (name,))
-        # точный матч связки урок↔скилл (LIKE '%name%' задевал чужие уроки)
-        conn.execute("UPDATE lessons SET status='skipped', note='retired by user' "
-                     "WHERE status IN ('staged','promoted') AND key IN "
-                     "(SELECT key FROM lessons WHERE excerpt LIKE ?)", (f"%{name}%",))
+        # точная связка урок↔скилл через lesson_key (LIKE по подстроке задевал чужие уроки)
+        if linked_lesson:
+            conn.execute("UPDATE lessons SET status='skipped', note='retired by user' "
+                         "WHERE key=? AND status IN ('staged','promoted')", (linked_lesson,))
         conn.commit()
     finally:
         conn.close()

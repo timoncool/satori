@@ -46,7 +46,8 @@ def norm_path(p: str) -> str:
 
 def state_load() -> dict:
     try:
-        return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+        st = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+        return st if isinstance(st, dict) else {}
     except Exception:
         return {}
 
@@ -54,7 +55,10 @@ def state_load() -> dict:
 def state_save(st: dict) -> None:
     try:
         ROOT.mkdir(parents=True, exist_ok=True)
-        STATE_PATH.write_text(json.dumps(st), encoding="utf-8")
+        # tmp + replace: параллельный хук не прочитает полузаписанный JSON
+        tmp = STATE_PATH.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(st), encoding="utf-8")
+        os.replace(tmp, STATE_PATH)
     except Exception:
         pass
 
@@ -79,10 +83,13 @@ def pending_calls(tp: str, offset: int) -> int:
     size = p.stat().st_size
     if size <= offset:
         return 0
+    capped = size - offset > TAIL_CAP
     with p.open("rb") as f:
-        f.seek(max(offset, size - TAIL_CAP) if size - offset > TAIL_CAP else offset)
+        f.seek(size - TAIL_CAP if capped else offset)
         tail = f.read().decode("utf-8", errors="replace")
-    return tail.count('"type":"tool_use"') + tail.count('"type": "tool_use"')
+    n = tail.count('"type":"tool_use"') + tail.count('"type": "tool_use"')
+    # хвост обрезан капом → недосчёт; накопление >4МБ само по себе значит «порог давно пройден»
+    return max(n, MIN_CALLS) if capped else n
 
 
 def main() -> None:
@@ -94,10 +101,16 @@ def main() -> None:
     tp = norm_path(data.get("transcript_path", "") or "")
 
     if event == "session-end":
+        # жёсткий таймаут: подвисший reflect (гигантский транскрипт, залоченная БД)
+        # не должен держать закрытие сессии дольше лимита хука
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
             import server  # noqa: PLC0415
-            server.reflect(tp)
+            import threading  # noqa: PLC0415
+            # daemon: по таймауту процесс выходит, не дожидаясь зависшего reflect
+            t = threading.Thread(target=server.reflect, args=(tp,), daemon=True)
+            t.start()
+            t.join(timeout=45)
         except Exception:
             pass
         return

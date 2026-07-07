@@ -2,7 +2,7 @@
 
 # satori
 
-**A self-learning loop for Claude Code — the model learns skills from its own sessions, behind a human gate.**
+**A self-learning loop for Claude Code — the model learns skills from its own sessions. Fully automatic, fully visible, fully reversible.**
 
 [![Status](https://img.shields.io/badge/status-beta-orange?style=flat-square)](#-beta-disclaimer)
 [![License](https://img.shields.io/github/license/timoncool/satori?style=flat-square)](LICENSE)
@@ -18,7 +18,7 @@
 > ### ⚠️ Beta disclaimer
 > This is **beta software** I build for myself and share with the community as-is. It parses your session transcripts, stores lesson data locally and — **by default, automatically** — activates skills that will instruct your future Claude sessions. Every activation is announced in chat (⛩) and reversible in one call (`retire_skill`), but do read `server.py` and watch what your agent learns. It works on my setup; I can't guarantee yours and **take no responsibility** for the skills your agent teaches itself. Want to pre-approve everything instead? `SATORI_AUTO_APPROVE=0`.
 
-satori is an MCP server + hooks that give Claude Code a closed self-learning loop: user corrections and tool failures become lesson candidates, lessons become skill drafts, drafts become active skills — but only through a gate. Windows-native, works in Claude Desktop, zero bash wrappers.
+satori is an MCP server + hooks that give Claude Code a closed self-learning loop: user corrections and tool failures become lesson candidates, lessons become skill drafts, drafts become active skills — automatically, visibly, reversibly. Windows-native, works in Claude Desktop, zero bash wrappers.
 
 Two principles you won't find together elsewhere: **the server does only deterministic mechanics** (parsing, counters, storage, validation) — the thinking is done by the calling model right in the session, no background LLM calls, no extra bills; and **fully automatic, fully visible, fully reversible** — validated drafts activate on their own, every loop event is announced in chat with a ⛩ marker, and `retire_skill` undoes any activation in one call (prefer a manual approval gate instead? `SATORI_AUTO_APPROVE=0`).
 
