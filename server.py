@@ -169,8 +169,9 @@ def parse_new_lines(conn: sqlite3.Connection, path: Path) -> tuple[list, dict]:
                         stats["file_edits"] += 1
                     if name == "Skill":
                         stats["skills_seen"].add(str(inp.get("skill", "")))
-                    tgt = inp.get("file_path") or inp.get("command", "")[:60]
-                    if prev_failed and prev_failed == (name, str(tgt)):
+                    tgt = str(inp.get("file_path") or inp.get("command", "")[:60])
+                    # починка после падения: следующий tool_use трогает тот же locus
+                    if prev_failed and prev_failed != "generic" and prev_failed in tgt:
                         signals.append(("fix_after_fail", f"{name} {tgt}"[:300]))
                     prev_failed = None
                 if b.get("type") == "tool_result":
@@ -179,7 +180,7 @@ def parse_new_lines(conn: sqlite3.Connection, path: Path) -> tuple[list, dict]:
                         m = re.search(r"[\w./\\-]+\.(?:py|ts|tsx|js|php|md|json|scss)", txt)
                         locus = m.group(0) if m else "generic"
                         signals.append(("failure", f"{locus}: {txt[:220]}"))
-                        prev_failed = ("_last", locus)
+                        prev_failed = locus
         new_offset = f.tell()
     conn.execute("INSERT OR REPLACE INTO meta VALUES(?,?)", (off_key, str(new_offset)))
     return signals, stats
