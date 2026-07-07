@@ -16,11 +16,11 @@
 </div>
 
 > ### ⚠️ Beta disclaimer
-> This is **beta software** I build for myself and share with the community as-is. It parses your session transcripts, stores lesson data locally and drafts skills that — once **you** approve them — will instruct your future Claude sessions. Read `server.py` and the drafts in `staging/` before approving anything. It works on my setup; I can't guarantee yours and **take no responsibility** for what your agent learns. Nothing self-activates and everything is reversible — but the judgment is yours.
+> This is **beta software** I build for myself and share with the community as-is. It parses your session transcripts, stores lesson data locally and — **by default, automatically** — activates skills that will instruct your future Claude sessions. Every activation is announced in chat (⛩) and reversible in one call (`retire_skill`), but do read `server.py` and watch what your agent learns. It works on my setup; I can't guarantee yours and **take no responsibility** for the skills your agent teaches itself. Want to pre-approve everything instead? `SATORI_AUTO_APPROVE=0`.
 
 satori is an MCP server + hooks that give Claude Code a closed self-learning loop: user corrections and tool failures become lesson candidates, lessons become skill drafts, drafts become active skills — but only through a gate. Windows-native, works in Claude Desktop, zero bash wrappers.
 
-Two principles you won't find together elsewhere: **the server does only deterministic mechanics** (parsing, counters, storage, validation) — the thinking is done by the calling model right in the session, no background LLM calls, no extra bills; and **nothing self-activates** — drafts sit in staging until explicitly approved.
+Two principles you won't find together elsewhere: **the server does only deterministic mechanics** (parsing, counters, storage, validation) — the thinking is done by the calling model right in the session, no background LLM calls, no extra bills; and **fully automatic, fully visible, fully reversible** — validated drafts activate on their own, every loop event is announced in chat with a ⛩ marker, and `retire_skill` undoes any activation in one call (prefer a manual approval gate instead? `SATORI_AUTO_APPROVE=0`).
 
 ## Features
 
@@ -28,7 +28,7 @@ Two principles you won't find together elsewhere: **the server does only determi
 - **User correction = signal #1** — surfaces as a candidate after a single occurrence (Devin's mechanic); tool failures wait for recurrence
 - **Patch-not-append** — a recurring signal bumps `seen_count` instead of piling up rows
 - **SKIP gate, forever** — "not skill-worthy" verdicts are remembered; rejected noise never comes back
-- **Staging instead of auto-write** — a draft activates only via `approve_draft` (by you, or by the wake skill)
+- **Fully automatic** — a validated draft activates immediately (backup of anything it overwrites, `retire_skill` = one-call undo); `SATORI_AUTO_APPROVE=0` switches to a manual staging gate
 - **The trigger is sacred** — `description: Use when ...` is mandatory: recall works when a note says *when* to recall it, not what it does
 - **pinned_project** — a lesson is global or pinned to one project; approve routes it to the right skills folder
 - **Draft validation** — frontmatter, size, secrets (also redacted at rest), prompt-injection markers (EN+RU)
@@ -91,8 +91,9 @@ session transcript
 ② decide    the model judges candidates (corrections after 1×, the rest after 2×):
             noise → skip_lesson (forever), worthy → a draft
       ▼
-③ distill   submit_draft → staging/, validated, backed up, provenance-stamped.
-            Does NOT activate. approve_draft → ~/.claude/skills/ or the project
+③ distill   submit_draft → validated, provenance-stamped, staged AND auto-activated
+            into ~/.claude/skills/ (or the pinned project). ⛩ announced in chat;
+            retire_skill = one-call undo. Manual gate: SATORI_AUTO_APPROVE=0
       ▼
 ④ curate    usage telemetry, stale at 30d, archive at 90d
 ```
@@ -108,7 +109,8 @@ session transcript
 | `reflect(transcript_path?)` | stages 1+2+4: signals since offset, aggregation, candidates + similar existing skills, curator tick |
 | `skip_lesson(key, reason)` | permanent SKIP |
 | `submit_draft(name, markdown, lesson_key?, patches?, pinned_project?)` | draft into staging with full validation |
-| `approve_draft(name, dest_dir?)` | the gate: staging → active skills (routed by pinned_project) |
+| `retire_skill(name)` | one-call undo: live skill + staging copy → archive, pre-activation backup restored |
+| `approve_draft(name, dest_dir?)` | manual-mode gate (`SATORI_AUTO_APPROVE=0`): staging → active skills |
 | `session_search(query, limit?)` | FTS5 over all past transcripts |
 | `loop_status()` | loop telemetry |
 
@@ -116,6 +118,7 @@ session transcript
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `SATORI_AUTO_APPROVE` | 1 | fully automatic activation; 0 = manual staging gate |
 | `SN_PROMOTE_AT` | 2 | recurrences before a candidate (except corrections) |
 | `SN_CORRECTION_PROMOTE_AT` | 1 | user corrections surface immediately |
 | `SN_SEGMENT_TOOL_CALLS` / `SN_SEGMENT_FILE_EDITS` | 12 / 2 | "complex segment" threshold |
@@ -128,9 +131,9 @@ session transcript
 
 [**dream-skill**](https://github.com/timoncool/dream-skill) is this project's sibling — memory consolidation for Claude Code (dream = read-only pass, wake = gated apply, full rollback). satori handles **procedural memory** (skills), dream/wake handles **factual memory** (notes, rules, index) — and they meet in the middle:
 
-- dream's **Skill harvest** phase reads satori's `staging/` + usage telemetry and proposes `promote_skill` / `retire_skill` alongside its memory proposals
-- the same gate applies: your checkboxes, or an independent validator agent in auto mode (with a mandatory draft checklist: `Use when` trigger, no injection markers, no duplicates)
-- wake activates or retires drafts, logs every promotion, and its `rollback` restores skills too
+- satori runs fully automatic *inside* sessions; dream is the periodic *auditor*: its **Skill harvest** phase reads satori's staging + usage telemetry and proposes `retire_skill` for stale/duplicate self-taught skills (and `promote_skill` if you run satori in manual mode)
+- dream's validator re-checks every self-taught skill against a hard checklist: `Use when` trigger, no injection markers, no duplicates
+- wake applies the audit, logs everything, and its `rollback` restores skills too
 
 Each works standalone; together the cycle is complete: сон → пробуждение → прозрение (dream → wake → satori).
 

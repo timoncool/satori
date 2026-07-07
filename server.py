@@ -26,6 +26,8 @@ DB_PATH = ROOT / "state.db"
 PROJECTS = HOME / ".claude" / "projects"
 USER_SKILLS = HOME / ".claude" / "skills"
 
+# Полный автомат: драфт активируется сразу (0 = ручной staging-гейт для консерваторов)
+AUTO_APPROVE = os.environ.get("SATORI_AUTO_APPROVE", "1") == "1"
 # Пороги (env-переопределяемые)
 SEGMENT_TOOL_CALLS = int(os.environ.get("SN_SEGMENT_TOOL_CALLS", "12"))
 SEGMENT_FILE_EDITS = int(os.environ.get("SN_SEGMENT_FILE_EDITS", "2"))
@@ -65,21 +67,20 @@ KEY_STOP = re.compile(r"[^a-z0-9а-яё_./-]+", re.IGNORECASE)
 mcp = FastMCP(
     "satori",
     instructions=(
-        "Self-learning loop (4 stages: capture->decide->distill->curate). "
-        "CALL `reflect` SEVERAL TIMES PER SESSION: after finishing any substantial task "
-        "(~10+ tool calls), after the user corrects you, and before the session ends. "
-        "reflect returns lesson candidates — YOU judge each: worthless -> `skip_lesson`; "
-        "worth keeping -> write a SKILL.md draft and `submit_draft` (prefer patching the "
-        "similar existing skill reflect points to, over creating new). Drafts land in "
-        "staging, NEVER auto-activate: the user (or dream/wake) calls `approve_draft`. "
-        "Use `session_search` to recall how past sessions solved something. "
-        "`loop_status` shows telemetry. Never put secrets in drafts. "
-        "Draft descriptions must be PUSHY with concrete trigger phrases (Claude "
-        "undertriggers skills — official skill-creator guidance): 'Use when X, Y, "
-        "or the user mentions Z, even if they don't explicitly ask.' "
-        "VISIBILITY: the user wants a visible audit trail — after every reflect/"
-        "submit_draft/skip_lesson report in 1-2 plain chat lines (start with ⛩) "
-        "what fired, why, and what was recorded/staged/skipped."))
+        "FULLY AUTOMATIC self-learning loop (capture->decide->distill->curate). "
+        "CALL `reflect` SEVERAL TIMES PER SESSION without asking the user: after any "
+        "substantial task (~10+ tool calls), after the user corrects you, before the "
+        "session ends. reflect returns lesson candidates — YOU judge each AND ACT, "
+        "never ask permission: noise -> `skip_lesson`; worth keeping -> `submit_draft` "
+        "(prefer patching the similar existing skill reflect points to). In auto mode "
+        "(default) the draft ACTIVATES IMMEDIATELY — validated, backed up, reversible "
+        "via `retire_skill`. The user's control is VISIBILITY, not pre-approval: after "
+        "every loop event report in 1-2 plain chat lines starting with ⛩ — what fired, "
+        "why, what was learned/activated/skipped, and that `retire_skill` undoes it. "
+        "Use `session_search` to recall how past sessions solved something; "
+        "`loop_status` for telemetry. Never put secrets in drafts. Draft descriptions "
+        "must be PUSHY with concrete trigger phrases: 'Use when X, Y, or the user "
+        "mentions Z, even if they don't explicitly ask.'"))
 
 
 def db() -> sqlite3.Connection:
@@ -336,10 +337,28 @@ def submit_draft(name: str, markdown: str, lesson_key: str = "", patches: str = 
         if lesson_key:
             conn.execute("UPDATE lessons SET status='staged' WHERE key=?", (lesson_key,))
         conn.commit()
-        return {"staged": str(dest), "pinned_project": pinned_project or "global",
-                "note": "Draft is INACTIVE until approve_draft is called (by user or wake)."}
+        if not AUTO_APPROVE:
+            return {"staged": str(dest), "pinned_project": pinned_project or "global",
+                    "note": "Manual mode: inactive until approve_draft."}
     finally:
         conn.close()
+    # Полный автомат: активируем сразу (обратимо через retire_skill)
+    base = Path(pinned_project) / ".claude" / "skills" if pinned_project else USER_SKILLS
+    live = base / name / "SKILL.md"
+    live.parent.mkdir(parents=True, exist_ok=True)
+    if live.exists():
+        shutil.copy2(live, BACKUPS / f"{name}.pre-activate.{int(time.time())}.md")
+    shutil.copy2(dest, live)
+    conn = db()
+    try:
+        if lesson_key:
+            conn.execute("UPDATE lessons SET status='promoted' WHERE key=?", (lesson_key,))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"activated": str(live), "staged_copy": str(dest),
+            "note": ("AUTO-ACTIVATED — loads next session/restart. Announce it to the "
+                     "user with a ⛩ line; `retire_skill` reverts in one call.")}
 
 
 @mcp.tool()
@@ -373,6 +392,53 @@ def approve_draft(name: str, dest_dir: str = "") -> dict:
         conn.close()
     return {"promoted": str(dest), "backup_dir": str(BACKUPS),
             "note": "Restart Claude Code (or start a new session) to load the skill."}
+
+
+@mcp.tool()
+def retire_skill(name: str) -> dict:
+    """Instant undo for an auto-activated skill: moves the live skill dir and its
+    staging copy into satori's archive (recoverable), restores a pre-activation
+    backup if one existed."""
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    moved = []
+    conn = db()
+    try:
+        row = conn.execute("SELECT pinned_project FROM skill_usage WHERE name=?",
+                           (name,)).fetchone()
+    finally:
+        conn.close()
+    bases = [USER_SKILLS]
+    if row and row[0]:
+        bases.insert(0, Path(row[0]) / ".claude" / "skills")
+    (ROOT / "archive").mkdir(exist_ok=True)
+    for base in bases:
+        live = base / name
+        if live.is_dir():
+            shutil.move(str(live), str(ROOT / "archive" / f"{name}-retired-{ts}"))
+            moved.append(str(live))
+            backups = sorted(BACKUPS.glob(f"{name}.pre-activate.*.md"))
+            if backups:  # вернуть то, что стояло до активации
+                dest = base / name / "SKILL.md"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(backups[-1], dest)
+                moved.append(f"restored previous version from {backups[-1].name}")
+            break
+    stag = STAGING / name
+    if stag.is_dir():
+        shutil.move(str(stag), str(ROOT / "archive" / f"{name}-staging-{ts}"))
+        moved.append(str(stag))
+    conn = db()
+    try:
+        conn.execute("UPDATE skill_usage SET staged_ts=NULL WHERE name=?", (name,))
+        conn.execute("UPDATE lessons SET status='skipped', note='retired by user' "
+                     "WHERE status IN ('staged','promoted') AND key LIKE ?", (f"%{name}%",))
+        conn.commit()
+    finally:
+        conn.close()
+    if not moved:
+        return {"error": f"nothing found to retire for '{name}'"}
+    return {"retired": moved, "archive": str(ROOT / "archive"),
+            "note": "Recoverable from archive; the lesson is marked skipped and won't resurface."}
 
 
 @mcp.tool()
